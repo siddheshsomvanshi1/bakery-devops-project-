@@ -34,7 +34,7 @@ Run these commands to turn your EC2 into a DevOps management station.
 **Why?** To package our application code into portable containers.
 ```bash
 sudo apt update -y && sudo apt install docker.io -y
-sudo usermod -aG docker ubuntu # Allows running docker without 'sudo'
+sudo usermod -aG docker ubuntu
 ```
 
 ##### H5 – 2. Install AWS CLI v2
@@ -62,20 +62,15 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
 ```bash
 # 1. Login to your registry
-docker login -u your_username
+docker login -u siddheshsomvanshi27
 
-# 2. Build and Tag Frontend
-docker build -t your_username/bakery-frontend:latest .
-docker tag containerizedbakerywebapplication-frontend your_username/bakery-frontend:latest
+# 2. Build and Push Images
+docker build -t siddheshsomvanshi27/bakery-frontend:latest .
+docker push siddheshsomvanshi27/bakery-frontend:latest
 
-# 3. Build and Tag Backend
 cd backend-java
-docker build -t your_username/bakery-backend:latest .
-docker tag containerizedbakerywebapplication-backend your_username/bakery-backend:latest
-
-# 4. Push to Cloud
-docker push your_username/bakery-frontend:latest
-docker push your_username/bakery-backend:latest
+docker build -t siddheshsomvanshi27/bakery-backend:latest .
+docker push siddheshsomvanshi27/bakery-backend:latest
 ```
 
 ---
@@ -83,49 +78,121 @@ docker push your_username/bakery-backend:latest
 ## Phase 4: Kubernetes Orchestration (EKS)
 ### Section 1: Connecting to the Cluster
 #### H4 – Linking Kubectl to AWS
-**Why?** This tells your management server which cluster in which region it should control.
-
 ```bash
 aws eks update-kubeconfig --region ca-central-1 --name BakeryProject-EKS
 kubectl get nodes # Verifies that your worker nodes are 'Ready'
 ```
 
 ### Section 2: Deployment with bakery-deployment.yaml
-#### H4 – Applying the Manifest
-**Why?** This is the master plan. It tells Kubernetes to run 2 replicas of each service and creates the Load Balancers.
+#### H4 – The Manifest Source Code
+**Why?** This file defines your entire cloud infrastructure (Replicas, LoadBalancers, and Database connections).
 
-1. Create `bakery-deployment.yaml` with the Deployment and Service definitions.
-2. Run the deployment:
-```bash
-kubectl apply -f bakery-deployment.yaml
+Create a file named `bakery-deployment.yaml` and paste this code:
+
+```yaml
+apiVersion: apps/v1 
+kind: Deployment 
+metadata: 
+  name: bakery-backend 
+spec: 
+  replicas: 2 
+  selector: 
+    matchLabels: 
+      app: bakery-backend 
+  template: 
+    metadata: 
+      labels: 
+        app: bakery-backend 
+    spec: 
+      containers: 
+      - name: backend 
+        image: siddheshsomvanshi27/bakery-backend:latest 
+        ports: 
+        - containerPort: 8080 
+        env: 
+        - name: DB_URL 
+          value: "jdbc:mysql://bakery-db-instance.crm022wwqd6k.ca-central-1.rds.amazonaws.com:3306/bakery_db" 
+        - name: DB_USER 
+          value: "admin" 
+        - name: DB_PASS 
+          value: "admin123" 
+
+--- 
+apiVersion: v1 
+kind: Service 
+metadata: 
+  name: backend-service 
+spec: 
+  selector: 
+    app: bakery-backend 
+  ports: 
+  - port: 8080 
+    targetPort: 8080 
+  type: LoadBalancer 
+
+--- 
+apiVersion: apps/v1 
+kind: Deployment 
+metadata: 
+  name: bakery-frontend 
+spec: 
+  replicas: 2 
+  selector: 
+    matchLabels: 
+      app: bakery-frontend 
+  template: 
+    metadata: 
+      labels: 
+        app: bakery-frontend 
+    spec: 
+      containers: 
+      - name: frontend 
+        image: siddheshsomvanshi27/bakery-frontend:latest 
+        ports: 
+        - containerPort: 80 
+
+--- 
+apiVersion: v1 
+kind: Service 
+metadata: 
+  name: frontend-service 
+spec: 
+  selector: 
+    app: bakery-frontend 
+  ports: 
+  - port: 80 
+    targetPort: 80 
+  type: LoadBalancer 
 ```
 
-#### H4 – The Critical main.js Fix
-**Why?** In EKS, the Frontend and Backend have different URLs. You must tell the JavaScript where the new Backend Load Balancer is.
-
-1. Get Backend URL: `kubectl get svc backend-service`.
-2. Update the URL in `js/main.js`.
-3. Re-push and Restart:
+#### H4 – Applying the Manifest
 ```bash
-docker build -t your_username/bakery-frontend:latest .
-docker push your_username/bakery-frontend:latest
-kubectl rollout restart deployment bakery-frontend # Pulls the new fix
+kubectl apply -f bakery-deployment.yaml
 ```
 
 ---
 
 ## Phase 5: Verification & Output
-### Section 1: Final Networking
+### Section 1: Final Networking & Fixes
+#### H4 – The Critical main.js Fix
+**Why?** You must tell the JavaScript where the new Backend Load Balancer is.
+1. Get Backend URL: `kubectl get svc backend-service`.
+2. Update the URL in `js/main.js`.
+3. Re-push and Restart:
+```bash
+docker build -t siddheshsomvanshi27/bakery-frontend:latest .
+docker push siddheshsomvanshi27/bakery-frontend:latest
+kubectl rollout restart deployment bakery-frontend
+```
+
 #### H4 – RDS Security Group Fix
-**Why?** RDS blocks all traffic by default. We must explicitly allow the EKS Nodes to talk to it.
 1. Add Inbound Rule to RDS Security Group: **MySQL (3306)**.
-2. **Source**: Select your **EKS Node Security Group**.
+2. **Source**: Select your **EKS Node Security Group ID**.
 
 ### Section 2: Accessing the App
-#### H4 – Get Your URL
+#### H4 – Get Your Public URL
 ```bash
 kubectl get svc frontend-service # Copy the EXTERNAL-IP
 ```
-**Paste that URL in your browser to see the live project!**
 
 ###### H6 – End of DevOps Documentation
