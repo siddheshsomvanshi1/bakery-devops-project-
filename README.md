@@ -7,22 +7,59 @@ This project demonstrates a full production-grade deployment of a Java-based Bak
 
 ## Phase 1: Local Environment & Infrastructure Setup
 ### Section 1: AWS RDS (Database) Setup
-#### H4 – Database Configuration
-Before launching servers, we set up a managed MySQL database.
+#### H4 – What is AWS RDS?
+**Amazon Relational Database Service (RDS)** is a managed service that makes it easy to set up, operate, and scale a relational database in the cloud. Instead of managing a database on your own server (EC2), RDS handles backups, patching, and scaling automatically.
+
+#### H4 – Initial Database Configuration
 1. Go to **RDS Console** -> **Create Database**.
 2. Select **MySQL 8.0** (Free Tier).
 3. **DB Instance Identifier**: `bakery-db`.
 4. **Master Username**: `admin`.
 5. **Master Password**: `YourSecurePassword123`.
-6. **Public Access**: No.
+6. **Public Access**: No (Secure way).
 7. **Initial Database Name**: `bakery_db`.
 
-### Section 2: AWS EC2 (Management Server) Setup
-#### H4 – Launching the Instance
-This instance acts as our build and management server.
-1. **AMI**: Ubuntu 22.04 LTS.
-2. **Instance Type**: t2.micro.
-3. **Security Group**: Allow SSH (22), HTTP (80), and Custom TCP (8080).
+#### H4 – Database Initialization (SQL Commands)
+Connect to your RDS instance from EC2 and run these commands to create the schema:
+
+##### H5 – Create Database and Tables
+```sql
+CREATE DATABASE IF NOT EXISTS bakery_db;
+USE bakery_db;
+
+-- Table for Bakery Products
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    price DECIMAL(10,2),
+    image VARCHAR(255)
+);
+
+-- Table for Team Members
+CREATE TABLE team (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    role VARCHAR(255),
+    image VARCHAR(255)
+);
+
+-- Table for Contact Form Submissions
+CREATE TABLE contact_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    payload JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+##### H5 – Insert Sample Data
+```sql
+INSERT INTO products (name, price, image) VALUES 
+('Chocolate Cake', 49.99, 'img/product-1.jpg'),
+('French Bread', 14.99, 'img/product-2.jpg');
+
+INSERT INTO team (name, role, image) VALUES 
+('Ganesh Jadhav', 'Master Chef', 'img/team-1.jpg');
+```
 
 ---
 
@@ -37,7 +74,6 @@ sudo apt update -y
 sudo apt install docker.io -y
 sudo systemctl start docker
 sudo usermod -aG docker ubuntu
-# Log out and back in for permissions
 ```
 
 ##### H5 – Install AWS CLI v2
@@ -60,8 +96,6 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 ## Phase 3: Containerization & Image Management
 ### Section 1: Building Docker Images
 #### H4 – Frontend and Backend Build
-Navigate to your project directory and build the images:
-
 ```bash
 # Build Backend
 cd backend-java
@@ -72,55 +106,26 @@ cd ..
 docker build -t your-dockerhub-id/bakery-frontend:latest .
 ```
 
-### Section 2: Docker Hub Registry
-#### H4 – Pushing Images
-```bash
-docker login
-docker push your-dockerhub-id/bakery-backend:latest
-docker push your-dockerhub-id/bakery-frontend:latest
-```
-
 ---
 
 ## Phase 4: AWS EKS (Kubernetes) Deployment
-### Section 1: Cluster & Node Group Setup
-#### H4 – Console Configuration
-1. **Create EKS Cluster**: Use the AWS Console to create a cluster in `ca-central-1`.
-2. **Create Node Group**: 
-   - **Name**: `bakery-nodes`.
-   - **Node IAM Role**: Must include `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, and `AmazonEC2ContainerRegistryReadOnly`.
-   - **Instance Type**: t3.medium.
-   - **Scaling**: Min 1, Desired 2, Max 3.
-
-### Section 2: Connecting to EKS
+### Section 1: Connecting to EKS Cluster
 #### H4 – Updating Kubeconfig
 ```bash
-aws configure # Enter your Access Key & Secret
+aws configure # Enter Access Key, Secret, and Region (ca-central-1)
 aws eks update-kubeconfig --region ca-central-1 --name your-cluster-name
-kubectl get nodes # Verify nodes are 'Ready'
+kubectl get nodes # Verify connection
 ```
 
 ---
 
 ## Phase 5: Kubernetes Orchestration
-### Section 1: Creating Manifests
-#### H4 – The bakery-deployment.yaml File
-Create a file named `bakery-deployment.yaml` with the following structure:
-
-```yaml
-# Includes:
-# 1. Backend Deployment (2 Replicas) + Environment Variables for RDS
-# 2. Backend Service (Type: LoadBalancer)
-# 3. Frontend Deployment (2 Replicas)
-# 4. Frontend Service (Type: LoadBalancer)
-```
-
-### Section 2: Applying Configuration
-#### H4 – Launching Pods
+### Section 1: Launching Pods
+#### H4 – Applying the Manifest
 ```bash
 kubectl apply -f bakery-deployment.yaml
 kubectl get pods # Wait for Running status
-kubectl get svc  # Get External-IP URLs
+kubectl get svc  # Get External-IP LoadBalancer URLs
 ```
 
 ---
@@ -134,9 +139,9 @@ kubectl get svc  # Get External-IP URLs
 4. Add Rule: **MySQL (3306)**, Source: **Worker Node Security Group ID**.
 
 ### Section 2: Verifying Output
-#### H4 – Accessing the Website
-1. Run `kubectl get svc frontend-service` to get the **External-IP**.
-2. Open the URL in your browser.
-3. Test the **Contact Form**: The browser calls the **Backend LoadBalancer**, which saves data into **AWS RDS**.
+#### H4 – Final Results
+1. Access the website using the **frontend-service External-IP**.
+2. The website is now live at the **AWS Load Balancer URL**.
+3. Form submissions are saved directly to the **AWS RDS MySQL** database.
 
 ###### H6 – End of Documentation
