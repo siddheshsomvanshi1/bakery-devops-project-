@@ -5,24 +5,24 @@ This project demonstrates a full production-grade deployment of a Java-based Bak
 
 ---
 
-## Phase 1: Local Environment & Infrastructure Setup
+## Phase 1: AWS Infrastructure Setup
 ### Section 1: AWS RDS (Database) Setup
 #### H4 – What is AWS RDS?
-**Amazon Relational Database Service (RDS)** is a managed service that makes it easy to set up, operate, and scale a relational database in the cloud. Instead of managing a database on your own server (EC2), RDS handles backups, patching, and scaling automatically.
+**Amazon Relational Database Service (RDS)** is a managed database service. Instead of installing MySQL on a server manually, RDS handles backups, security patches, and scaling for you, making it more reliable for production.
 
-#### H4 – Initial Database Configuration
+#### H4 – Initial RDS Configuration
 1. Go to **RDS Console** -> **Create Database**.
 2. Select **MySQL 8.0** (Free Tier).
 3. **DB Instance Identifier**: `bakery-db`.
 4. **Master Username**: `admin`.
 5. **Master Password**: `YourSecurePassword123`.
-6. **Public Access**: No (Secure way).
+6. **Public Access**: No (Secure).
 7. **Initial Database Name**: `bakery_db`.
 
 #### H4 – Database Initialization (SQL Commands)
-Connect to your RDS instance from EC2 and run these commands to create the schema:
+Once your RDS is active, connect to it and run these commands to set up your tables:
 
-##### H5 – Create Database and Tables
+##### H5 – Create Schema
 ```sql
 CREATE DATABASE IF NOT EXISTS bakery_db;
 USE bakery_db;
@@ -63,85 +63,104 @@ INSERT INTO team (name, role, image) VALUES
 
 ---
 
-## Phase 2: Server Configuration & Tools Installation
-### Section 1: Installing Docker & DevOps Tools
-#### H4 – Command Sequence for EC2
-Connect to your EC2 via SSH and run the following in sequence:
+## Phase 2: EC2 Management Server Setup
+### Section 1: Tool Installation Sequence
+#### H4 – Installing Docker, AWS CLI, and Kubectl
+Connect to your Ubuntu EC2 instance and run these commands in order:
 
-##### H5 – Install Docker
+##### H5 – Step 1: Install Docker
 ```bash
 sudo apt update -y
 sudo apt install docker.io -y
 sudo systemctl start docker
 sudo usermod -aG docker ubuntu
+# Note: Log out and log back in for group changes to take effect
 ```
 
-##### H5 – Install AWS CLI v2
+##### H5 – Step 2: Install AWS CLI v2
 ```bash
 sudo apt install unzip curl -y
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
 aws --version
+aws configure # Enter your Access Key, Secret Key, and Region (ca-central-1)
 ```
 
-##### H5 – Install kubectl
+##### H5 – Step 3: Install kubectl
 ```bash
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+kubectl version --client
 ```
 
 ---
 
-## Phase 3: Containerization & Image Management
-### Section 1: Building Docker Images
-#### H4 – Frontend and Backend Build
+## Phase 3: Dockerization & Registry Management
+### Section 1: Building and Pushing Images
+#### H4 – Docker Login and Build
 ```bash
-# Build Backend
+# Log in to Docker Hub
+docker login -u siddheshsomvanshi27
+
+# Build and Tag Frontend
+docker build -t siddheshsomvanshi27/bakery-frontend:latest .
+docker tag containerizedbakerywebapplication-frontend siddheshsomvanshi27/bakery-frontend:latest
+
+# Build and Tag Backend
 cd backend-java
-docker build -t your-dockerhub-id/bakery-backend:latest .
-
-# Build Frontend
-cd ..
-docker build -t your-dockerhub-id/bakery-frontend:latest .
+docker build -t siddheshsomvanshi27/bakery-backend:latest .
+docker tag containerizedbakerywebapplication-backend siddheshsomvanshi27/bakery-backend:latest
 ```
 
----
-
-## Phase 4: AWS EKS (Kubernetes) Deployment
-### Section 1: Connecting to EKS Cluster
-#### H4 – Updating Kubeconfig
+#### H4 – Pushing to Docker Hub
 ```bash
-aws configure # Enter Access Key, Secret, and Region (ca-central-1)
-aws eks update-kubeconfig --region ca-central-1 --name your-cluster-name
-kubectl get nodes # Verify connection
+docker push siddheshsomvanshi27/bakery-frontend:latest
+docker push siddheshsomvanshi27/bakery-backend:latest
 ```
 
 ---
 
-## Phase 5: Kubernetes Orchestration
-### Section 1: Launching Pods
-#### H4 – Applying the Manifest
+## Phase 4: Kubernetes Orchestration on AWS EKS
+### Section 1: EKS Cluster Connection
+#### H4 – Connecting to the Cluster
+```bash
+aws eks update-kubeconfig --region ca-central-1 --name BakeryProject-EKS
+kubectl get nodes # Verify your nodes are joined and 'Ready'
+```
+
+### Section 2: Deployment and Scaling
+#### H4 – Applying Manifests
+Create a `bakery-deployment.yaml` and apply it:
 ```bash
 kubectl apply -f bakery-deployment.yaml
-kubectl get pods # Wait for Running status
-kubectl get svc  # Get External-IP LoadBalancer URLs
+kubectl get pods # Ensure all pods are 'Running'
+```
+
+#### H4 – Updating Code and Rolling Restart
+If you change your JavaScript code, rebuild and restart the pods:
+```bash
+docker build -t siddheshsomvanshi27/bakery-frontend:latest .
+docker push siddheshsomvanshi27/bakery-frontend:latest
+kubectl rollout restart deployment bakery-frontend
 ```
 
 ---
 
-## Phase 6: Final Connectivity & Output
-### Section 1: Database Security Group Fix
-#### H4 – Allowing EKS to talk to RDS
-1. Go to **EC2 Console** -> **Worker Node Security Group**.
-2. Copy the **Security Group ID**.
-3. Go to **RDS Console** -> **Database Security Group** -> **Inbound Rules**.
-4. Add Rule: **MySQL (3306)**, Source: **Worker Node Security Group ID**.
+## Phase 5: Verification and Output
+### Section 1: Accessing the Application
+#### H4 – Get LoadBalancer URLs
+```bash
+kubectl get svc
+```
+1. Copy the **EXTERNAL-IP** of `frontend-service` to access the website.
+2. Copy the **EXTERNAL-IP** of `backend-service` and update it in your `js/main.js` for API calls.
 
-### Section 2: Verifying Output
-#### H4 – Final Results
-1. Access the website using the **frontend-service External-IP**.
-2. The website is now live at the **AWS Load Balancer URL**.
-3. Form submissions are saved directly to the **AWS RDS MySQL** database.
+### Section 2: Security Group Configuration
+#### H4 – Database Connectivity Fix
+1. Identify your **EKS Node Security Group** in the EC2 console.
+2. Add an **Inbound Rule** to your **RDS Security Group**:
+   - **Type**: MySQL (3306)
+   - **Source**: Paste the EKS Node Security Group ID.
 
-###### H6 – End of Documentation
+###### H6 – Documentation Completed Successfully
